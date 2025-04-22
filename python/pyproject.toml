@@ -1,0 +1,22 @@
+[project]
+name = "leanblueprintcopilot-python"
+version = "0.1.0"
+description = "Python utilities for Lean Blueprint Copilot VS Code extension"
+authors = [
+    { name = "Auguste Poiroux", email = "auguste.poiroux@epfl.ch" }
+]
+requires-python = "==3.10"
+dependencies = [
+    "jsonlines",
+    "leanblueprint>=0.0.15",
+    "lean-dojo==2.2.0",
+    "uv"
+]
+
+[tool.setuptools]
+py-modules = [
+    "blueprint_extractor",
+    "blueprint_lean_linking",
+    "lean_project_extractor",
+    "lean_utils"
+]
