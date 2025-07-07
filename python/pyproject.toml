@@ -5,18 +5,18 @@ description = "Python utilities for Lean Blueprint Copilot VS Code extension"
 authors = [
     { name = "Auguste Poiroux", email = "auguste.poiroux@epfl.ch" }
 ]
-requires-python = "==3.10"
+requires-python = "==3.10.0"
 dependencies = [
-    "jsonlines",
+    "jsonlines>=4.0.0",
     "leanblueprint>=0.0.15",
-    "lean-dojo==2.2.0",
-    "uv"
+    "uv>=0.7.19",
+    "mcp[cli]>=1.6.0",
+    "lean-interact==0.7.0",
+    "lean-blueprint-extractor"
 ]
 
-[tool.setuptools]
-py-modules = [
-    "blueprint_extractor",
-    "blueprint_lean_linking",
-    "lean_project_extractor",
-    "lean_utils"
-]
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv.sources]
+lean-blueprint-extractor = { path = "../../../Lean/LeanBlueprintExtractor" }

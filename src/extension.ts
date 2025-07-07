@@ -43,10 +43,7 @@ class BlueprintTreeDataProvider implements vscode.TreeDataProvider<BlueprintNode
 	}
 }
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-
 	async function installLeanblueprint(contextFolder: string): Promise<boolean> {
 		function execPromise(cmd: string, options = {}): Promise<{ stdout: string, stderr: string }> {
 			return new Promise((resolve, reject) => {
@@ -182,6 +179,129 @@ export function activate(context: vscode.ExtensionContext) {
 		await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(targetFolder), false);
 	});
 
+	const parseBlueprintDisposable = vscode.commands.registerCommand('leanblueprintcopilot.parseBlueprintProject', async () => {
+		const folder = getWorkspaceFolder();
+		if (!folder) {
+			vscode.window.showErrorMessage('No workspace folder found.');
+			return;
+		}
+		const ok = await installLeanblueprint(folder);
+		if (!ok) {return;}
+		const pythonDir = path.join(__dirname, '..', 'python');
+		const venvDir = path.join(pythonDir, '.venv');
+		const venvActivate = path.join(venvDir, 'bin', 'activate');
+		const extractorScript = path.join(pythonDir, 'extractor.py');
+
+		if (!fs.existsSync(extractorScript)) {
+			vscode.window.showErrorMessage('extractor.py not found in workspace. Please add the extraction script.');
+			return;
+		}
+
+		const hiddenDir = path.join(folder, '.trace_cache');
+		if (!fs.existsSync(hiddenDir)) {
+			fs.mkdirSync(hiddenDir);
+		}
+		const blueprintDataJsonl = path.join(hiddenDir, 'blueprint_to_lean.jsonl');
+
+		const outputChannel = vscode.window.createOutputChannel('Lean Blueprint Extraction');
+		await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Parsing Blueprint project...' }, async () => {
+			return new Promise<void>((resolve) => {
+				outputChannel.clear();
+				outputChannel.show(true);
+				const child = require('child_process').spawn(
+					'bash',
+					['-c', `. "${venvActivate}" && python "${extractorScript}" --project-dir "${folder}"`],
+					{ cwd: folder, env: process.env }
+				);
+				let stdout = '';
+				let stderr = '';
+				child.stdout.on('data', (data: Buffer) => {
+					const str = data.toString();
+					stdout += str;
+					outputChannel.append(str);
+				});
+				child.stderr.on('data', (data: Buffer) => {
+					const str = data.toString();
+					stderr += str;
+					outputChannel.append(str);
+				});
+				child.on('close', (code: number) => {
+					if (code !== 0) {
+						vscode.window.showErrorMessage('Error running extractor.py (see logs for details)');
+						resolve();
+						return;
+					}
+					try {
+						const fileContent = fs.readFileSync(blueprintDataJsonl, 'utf8');
+						const data = fileContent
+							.split(/\r?\n/)
+							.filter(line => line.trim().length > 0)
+							.map(line => {
+								try {
+									return JSON.parse(line);
+								} catch (e) {
+									vscode.window.showWarningMessage('Skipping invalid JSONL line.');
+									return null;
+								}
+							})
+							.filter(obj => obj !== null);
+						function buildTree(nodes: any[]): BlueprintNode[] {
+							return nodes.map((n) => {
+								const label = n.title || n.label || n.stmt_type || n.processed_text || 'Item';
+								let children: BlueprintNode[] = [];
+								if (n.proof) {
+									children = children.concat(buildTree([n.proof]));
+								}
+								if (n.children) {
+									children = children.concat(buildTree(n.children));
+								}
+								// Add Lean declaration children
+								if (n.lean_declarations && Array.isArray(n.lean_declarations)) {
+									n.lean_declarations.forEach((decl: any) => {
+										if (decl.real_file && decl.range && decl.range.start && typeof decl.range.start.line === 'number') {
+											const leanLabel = `Lean: ${decl.full_name}`;
+											const leanNode = new BlueprintNode(leanLabel, [], vscode.TreeItemCollapsibleState.None);
+											leanNode.command = {
+												title: `Go to Lean: ${decl.full_name}`,
+												command: 'vscode.open',
+												arguments: [vscode.Uri.file(decl.real_file).with({ fragment: `L${decl.range.start.line + 1}` })]
+											};
+											leanNode.tooltip = decl.real_file + `:L${decl.range.start.line + 1}`;
+											children.push(leanNode);
+										}
+									});
+								}
+								// Set collapsibleState based on children
+								const collapsibleState = children.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None;
+								const node = new BlueprintNode(label, children, collapsibleState);
+								const info = { ...n };
+								delete info.children;
+								delete info.proof;
+								if (n.lean_names && Array.isArray(n.lean_names) && n.lean_names.length > 0) {
+									node.description = `Lean: ${n.lean_names.join(', ')}`;
+								}
+								// Blueprint declaration link as main command
+								if (n.label) {
+									node.command = {
+										title: 'Go to Blueprint Declaration',
+										command: 'workbench.action.findInFiles',
+										arguments: [{ query: n.label }]
+									};
+								}
+								node.tooltip = JSON.stringify(info, null, 2);
+								return node;
+							});
+						}
+						blueprintTreeProvider.refresh(buildTree(data));
+					} catch (e) {
+						vscode.window.showErrorMessage('Failed to parse `blueprint_extractor.py` output.');
+					}
+					resolve();
+				});
+			});
+		});
+	});
+
 	function getWorkspaceFolder(): string | undefined {
 		const folders = vscode.workspace.workspaceFolders;
 		if (!folders || folders.length === 0) {
@@ -259,196 +379,50 @@ export function activate(context: vscode.ExtensionContext) {
 	const blueprintTreeProvider = new BlueprintTreeDataProvider();
 	vscode.window.registerTreeDataProvider('leanblueprintcopilot.blueprintTree', blueprintTreeProvider);
 
-	const parseBlueprintDisposable = vscode.commands.registerCommand('leanblueprintcopilot.parseBlueprintProject', async () => {
-		const folder = getWorkspaceFolder();
-		if (!folder) {
-			vscode.window.showErrorMessage('No workspace folder found.');
-			return;
-		}
-		const ok = await installLeanblueprint(folder);
-		if (!ok) {return;}
-		const pythonDir = path.join(__dirname, '..', 'python');
-		const venvDir = path.join(pythonDir, '.venv');
-		const venvActivate = path.join(venvDir, 'bin', 'activate');
-		const extractorScript = path.join(pythonDir, 'blueprint_extractor.py');
-		const blueprintSrc = `${folder}/blueprint/src`;
+	const didChangeEmitter = new vscode.EventEmitter<void>();
 
-		if (!fs.existsSync(extractorScript)) {
-			vscode.window.showErrorMessage('blueprint_extractor.py not found in workspace. Please add the extraction script.');
-			return;
-		}
+	const registerMcpServerDisposable = vscode.lm.registerMcpServerDefinitionProvider('LeanBlueprintCopilot', {
+		onDidChangeMcpServerDefinitions: didChangeEmitter.event,
+		provideMcpServerDefinitions: async () => {
+			return await vscode.window.withProgress({
+				location: vscode.ProgressLocation.Notification,
+				title: 'Starting Lean Blueprint MCP server...',
+				cancellable: false
+			}, async (progress) => {
+				const folder = getWorkspaceFolder();
+				if (!folder) {
+					vscode.window.showErrorMessage('No workspace folder found.');
+					return;
+				}
+				const ok = await installLeanblueprint(folder);
+				if (!ok) {return;}
+				const pythonDir = path.join(__dirname, '..', 'python');
+				const venvDir = path.join(pythonDir, '.venv');
+				const venvActivate = path.join(venvDir, 'bin', 'activate');
+				const mcpScript = path.join(pythonDir, 'mcp_server.py');
 
-		const hiddenDir = path.join(folder, '.leanblueprintcopilot');
-		if (!fs.existsSync(hiddenDir)) {
-			fs.mkdirSync(hiddenDir);
-		}
-		const tmpJsonPath = path.join(hiddenDir, 'blueprint_tree.json');
+				if (!fs.existsSync(mcpScript)) {
+					vscode.window.showErrorMessage('mcp_server.py not found in the Python directory.');
+					return;
+				}
 
-		await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Parsing Lean blueprint with plasTeX...' }, async () => {
-			return new Promise<void>((resolve) => {
-				exec(`bash -c '. "${venvActivate}" && python "${extractorScript}" "${blueprintSrc}" "${tmpJsonPath}"'`, { maxBuffer: 1024 * 1024 * 10 }, (err, stdout, stderr) => {
-					if (err) {
-						vscode.window.showErrorMessage('Error running blueprint_extractor.py: ' + stderr);
-						resolve();
-						return;
-					}
-					try {
-						const fileContent = fs.readFileSync(tmpJsonPath, 'utf8');
-						const data = JSON.parse(fileContent);
-						const treeData = Array.isArray(data) ? data : (data.tree || []);
-						function buildTree(nodes: any[]): BlueprintNode[] {
-							return nodes.map((n) => {
-								const label = n.title || n.label || n.stmt_type || n.processed_text || 'Item';
-								const children: BlueprintNode[] = [];
-								if (n.proof) {
-									children.push(...buildTree([n.proof]));
-								}
-								if (n.children) {
-									children.push(...buildTree(n.children));
-								}
-								const node = new BlueprintNode(label, children);
-								const info = { ...n };
-								delete info.children;
-								delete info.proof;
-								if (info.lean || info.lean_urls) {
-									const leanDecls = info.lean || [];
-									const urls = info.lean_urls || [];
-									if (leanDecls.length > 0) {
-										node.description = `Lean: ${leanDecls.join(', ')}`;
-									}
-									if (urls.length > 0) {
-										node.command = {
-											command: 'vscode.open',
-											title: 'Open Lean Declaration',
-											arguments: [vscode.Uri.parse(urls[0])]
-										};
-									}
-								}
-								node.tooltip = JSON.stringify(info, null, 2);
-								return node;
-							});
-						}
-						const root = new BlueprintNode('Blueprint', buildTree(treeData));
-						blueprintTreeProvider.refresh([root]);
-						vscode.window.showInformationMessage('Blueprint structure loaded from plasTeX extraction.');
-					} catch (e) {
-						vscode.window.showErrorMessage('Failed to parse blueprint_extractor.py output as JSON.');
-					}
-					resolve();
-				});
+				const port = '5000';
+
+				let servers: vscode.McpServerDefinition[] = [];
+				servers.push(new vscode.McpStdioServerDefinition(
+					'LeanBlueprintCopilot',
+					'bash',
+					['-c', `. "${venvActivate}" && python "${mcpScript}" --port ${port}`],
+					{"LEAN_BLUEPRINT_PROJECT_DIR": folder},
+				));
+				return servers;
 			});
-		});
+		},
+		resolveMcpServerDefinition: async (server: vscode.McpServerDefinition) => {return server;},
 	});
 
-	const incorporateLatexDisposable = vscode.commands.registerCommand('leanblueprintcopilot.incorporateLatex', async () => {
-		const latexInput = await vscode.window.showInputBox({
-			prompt: 'Paste raw LaTeX to incorporate into the blueprint',
-			placeHolder: 'Paste your LaTeX here...'
-		});
-		if (!latexInput) {
-			return;
-		}
-
-		const promptMessages = [
-			vscode.LanguageModelChatMessage.User(`You are an expert in Lean blueprints. Given the following raw LaTeX, structure it as a Lean blueprint section, using the macros:
-- \\lean for Lean declaration names
-- \\leanok for formalized environments
-- \\uses for dependencies
-
-Example:
-
-\\begin{theorem}[Smale 1958]
-  \\label{thm:sphere_eversion}
-  \\lean{sphere_eversion}
-  \\leanok
-  \\uses{def:immersion}
-  There is a homotopy of immersions of $𝕊^2$ into $ℝ^3$ from the inclusion map to the antipodal map $a : q ↦ -q$.
-\\end{theorem}
-
-\\begin{proof}
-  \\leanok
-  \\uses{thm:open_ample, lem:open_ample_immersion}
-  This obviously follows from what we did so far.
-\\end
-
----
-
-Raw LaTeX:
-${latexInput}
-
----
-
-Return only the structured Lean blueprint LaTeX, nothing else.`)
-		];
-
-		let result = '';
-		try {
-			const [model] = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' });
-			if (!model) {
-				vscode.window.showErrorMessage('No language model available. Please check your Copilot or language model setup.');
-				return;
-			}
-			const chatResponse = await model.sendRequest(promptMessages, {}, new vscode.CancellationTokenSource().token);
-			for await (const fragment of chatResponse.text) {
-				result += fragment;
-			}
-		} catch (err) {
-			if (err instanceof vscode.LanguageModelError) {
-				vscode.window.showErrorMessage(`Language model error: ${err.message}`);
-				return;
-			} else {
-				vscode.window.showErrorMessage('Error calling language model: ' + err);
-				return;
-			}
-		}
-
-		const doc = await vscode.workspace.openTextDocument({ content: result, language: 'latex' });
-		await vscode.window.showTextDocument(doc, { preview: false });
-	});
-	context.subscriptions.push(incorporateLatexDisposable);
-
-	context.subscriptions.push(createBlueprintDisposable, parseBlueprintDisposable);
+	context.subscriptions.push(createBlueprintDisposable, parseBlueprintDisposable, registerMcpServerDisposable);
 }
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
-
-
-// The main content of your blueprint should live in `content.tex` (or in files
-// imported in `content.tex` if you want to split your content).
-
-// The main TeX macros that relate your TeX code to your Lean code are:
-
-// * `\lean` that lists the Lean declaration names corresponding to the surrounding
-// 	definition or statement (including namespaces).
-// * `\leanok` which claims the surrounding environment is fully formalized. Here
-// 	an environment could be either a definition/statement or a proof.
-// * `\uses` that lists LaTeX labels that are used in the surrounding environment.
-// 	This information is used to create the dependency graph. Here
-// 	an environment could be either a definition/statement or a proof, depending on
-// 	whether the referenced labels are necessary to state the definition/theorem
-// 	or only in the proof.
-
-// The example below show those essential macros in action, assuming the existence of
-// LaTeX labels `def:immersion`, `thm:open_ample` and `lem:open_ample_immersion` and
-// assuming the existence of a Lean declaration `sphere_eversion`.
-
-// ```latex
-// \begin{theorem}[Smale 1958]
-// 	\label{thm:sphere_eversion}
-// 	\lean{sphere_eversion}
-// 	\leanok
-// 	\uses{def:immersion}
-// 	There is a homotopy of immersions of $𝕊^2$ into $ℝ^3$ from the inclusion map to
-// 	the antipodal map $a : q ↦ -q$.
-// \end{theorem}
-
-// \begin{proof}
-// 	\leanok
-// 	\uses{thm:open_ample, lem:open_ample_immersion}
-// 	This obviously follows from what we did so far.
-// \end
-// ```
-
-// Note that the proof above is abbreviated in this documentation.
-// Be nice to you and your collaborators and include more details in your blueprint proofs!
