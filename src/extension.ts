@@ -6,40 +6,196 @@ import * as path from 'path';
 import { execFile, exec } from 'child_process';
 import * as os from 'os';
 
+// Status type for filtering
+export type BlueprintStatus = 'formalized' | 'non-formalized';
+
 // BlueprintNode represents a node in the blueprint tree
 class BlueprintNode extends vscode.TreeItem {
 	children: BlueprintNode[];
+	blueprintData: any; // Store the original blueprint data
+	isFormalized: boolean;
+
 	constructor(
 		label: string,
 		children: BlueprintNode[] = [],
-		collapsibleState: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.Collapsed
+		collapsibleState: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.Collapsed,
+		blueprintData: any = null
 	) {
 		super(label, children.length > 0 ? collapsibleState : vscode.TreeItemCollapsibleState.None);
 		this.children = children;
+		this.blueprintData = blueprintData;
+		this.isFormalized = blueprintData ? this.calculateFormalizationStatus(blueprintData) : false;
+
+		// Set context value for context menu
+		this.contextValue = this.isFormalized ? 'formalizedNode' : 'unformalizedNode';
+
+		// Add icon based on formalization status
+		if (this.blueprintData && this.blueprintData.stmt_type) {
+			this.iconPath = new vscode.ThemeIcon(
+				this.isFormalized ? 'check' : 'circle-outline',
+				this.isFormalized ? undefined : new vscode.ThemeColor('problemsWarningIcon.foreground')
+			);
+		}
+	}
+
+	private calculateFormalizationStatus(data: any): boolean {
+		// A node is considered formalized if it has leanok flag or is fully proved
+		return !!(data.leanok || data.fully_proved || (data.lean_declarations && data.lean_declarations.length > 0));
 	}
 }
 
-// BlueprintTreeDataProvider provides the tree data for the blueprint
+// BlueprintTreeDataProvider provides the tree data for the blueprint with filtering capabilities
 class BlueprintTreeDataProvider implements vscode.TreeDataProvider<BlueprintNode> {
 	private _onDidChangeTreeData: vscode.EventEmitter<BlueprintNode | undefined | void> = new vscode.EventEmitter<BlueprintNode | undefined | void>();
 	readonly onDidChangeTreeData: vscode.Event<BlueprintNode | undefined | void> = this._onDidChangeTreeData.event;
 
 	private rootNodes: BlueprintNode[] = [];
+	private showOnlyUnformalized: boolean = false;
+
+	private statusFilter: Set<BlueprintStatus> = new Set(['formalized', 'non-formalized']);
+
+	private _searchText: string = '';
 
 	refresh(nodes: BlueprintNode[]) {
 		this.rootNodes = nodes;
 		this._onDidChangeTreeData.fire();
 	}
 
+	setFilter(showOnlyUnformalized: boolean) {
+		this.showOnlyUnformalized = showOnlyUnformalized;
+		this._onDidChangeTreeData.fire();
+	}
+
+	setStatusFilter(statuses: BlueprintStatus[]) {
+		this.statusFilter = new Set(statuses);
+		this._onDidChangeTreeData.fire();
+	}
+
 	getTreeItem(element: BlueprintNode): vscode.TreeItem {
+		// Add command for unformalized nodes
+		if (!element.isFormalized && element.blueprintData && element.blueprintData.stmt_type) {
+			element.command = {
+				title: 'Select for Formalization',
+				command: 'leanblueprintcopilot.selectNodeForFormalization',
+				arguments: [element.blueprintData]
+			};
+		}
 		return element;
 	}
 
 	getChildren(element?: BlueprintNode): Thenable<BlueprintNode[]> {
 		if (!element) {
-			return Promise.resolve(this.rootNodes);
+			return Promise.resolve(this.filterNodesByStatus(this.rootNodes));
 		}
-		return Promise.resolve(element.children);
+		return Promise.resolve(this.filterNodesByStatus(element.children));
+	}
+
+	private filterUnformalizedNodes(nodes: BlueprintNode[]): BlueprintNode[] {
+		const result: BlueprintNode[] = [];
+
+		for (const node of nodes) {
+			if (!node.isFormalized && node.blueprintData && node.blueprintData.stmt_type) {
+				// Include the unformalized node
+				result.push(node);
+			} else if (node.children.length > 0) {
+				// Check if any children are unformalized
+				const unformalizedChildren = this.filterUnformalizedNodes(node.children);
+				if (unformalizedChildren.length > 0) {
+					// Create a copy of the node with only unformalized children
+					const filteredNode = new BlueprintNode(
+						node.label as string,
+						unformalizedChildren,
+						vscode.TreeItemCollapsibleState.Expanded,
+						node.blueprintData
+					);
+					filteredNode.description = `${unformalizedChildren.length} unformalized`;
+					filteredNode.iconPath = new vscode.ThemeIcon('folder');
+					result.push(filteredNode);
+				}
+			}
+		}
+
+		return result;
+	}
+
+	private filterNodesByStatus(nodes: BlueprintNode[]): BlueprintNode[] {
+		const result: BlueprintNode[] = [];
+		const showFormalized = this.statusFilter.has('formalized');
+		const showNonFormalized = this.statusFilter.has('non-formalized');
+
+		for (const node of nodes) {
+			const isFormalized = node.isFormalized;
+			// If only non-formalized is selected, show only non-formalized nodes and their relevant parents
+			if (!showFormalized && showNonFormalized) {
+				if (!isFormalized) {
+					// Node is non-formalized, include it (with filtered children)
+					const filteredChildren = this.filterNodesByStatus(node.children);
+					const filteredNode = new BlueprintNode(
+						node.label as string,
+						filteredChildren,
+						filteredChildren.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
+						node.blueprintData
+					);
+					filteredNode.description = node.description;
+					filteredNode.iconPath = node.iconPath;
+					filteredNode.command = node.command;
+					filteredNode.tooltip = node.tooltip;
+					result.push(filteredNode);
+				} else if (node.children.length > 0) {
+					// Node is formalized, but may have non-formalized descendants
+					const filteredChildren = this.filterNodesByStatus(node.children);
+					if (filteredChildren.length > 0) {
+						const filteredNode = new BlueprintNode(
+							node.label as string,
+							filteredChildren,
+							vscode.TreeItemCollapsibleState.Expanded,
+							node.blueprintData
+						);
+						filteredNode.description = node.description;
+						filteredNode.iconPath = new vscode.ThemeIcon('folder');
+						filteredNode.tooltip = node.tooltip;
+						result.push(filteredNode);
+					}
+				}
+			} else {
+				// Default: show nodes matching the selected statuses
+				if ((isFormalized && showFormalized) || (!isFormalized && showNonFormalized)) {
+					const filteredChildren = this.filterNodesByStatus(node.children);
+					const filteredNode = new BlueprintNode(
+						node.label as string,
+						filteredChildren,
+						filteredChildren.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
+						node.blueprintData
+					);
+					filteredNode.description = node.description;
+					filteredNode.iconPath = node.iconPath;
+					filteredNode.command = node.command;
+					filteredNode.tooltip = node.tooltip;
+					result.push(filteredNode);
+				} else if (node.children.length > 0) {
+					const filteredChildren = this.filterNodesByStatus(node.children);
+					if (filteredChildren.length > 0) {
+						const filteredNode = new BlueprintNode(
+							node.label as string,
+							filteredChildren,
+							vscode.TreeItemCollapsibleState.Expanded,
+							node.blueprintData
+						);
+						filteredNode.description = node.description;
+						filteredNode.iconPath = new vscode.ThemeIcon('folder');
+						filteredNode.tooltip = node.tooltip;
+						result.push(filteredNode);
+					}
+				}
+			}
+		}
+		return result;
+	}
+
+	// Add searchText and setSearchText to the provider
+	setSearchText(text: string) {
+		this._searchText = text;
+		this._onDidChangeTreeData.fire();
 	}
 }
 
@@ -188,14 +344,7 @@ export function activate(context: vscode.ExtensionContext) {
 		const ok = await installLeanblueprint(folder);
 		if (!ok) {return;}
 		const pythonDir = path.join(__dirname, '..', 'python');
-		const venvDir = path.join(pythonDir, '.venv');
-		const venvActivate = path.join(venvDir, 'bin', 'activate');
-		const extractorScript = path.join(pythonDir, 'extractor.py');
-
-		if (!fs.existsSync(extractorScript)) {
-			vscode.window.showErrorMessage('extractor.py not found in workspace. Please add the extraction script.');
-			return;
-		}
+		const venvActivate = path.join(pythonDir, '.venv', 'bin', 'activate');
 
 		const hiddenDir = path.join(folder, '.trace_cache');
 		if (!fs.existsSync(hiddenDir)) {
@@ -210,7 +359,7 @@ export function activate(context: vscode.ExtensionContext) {
 				outputChannel.show(true);
 				const child = require('child_process').spawn(
 					'bash',
-					['-c', `. "${venvActivate}" && python "${extractorScript}" --project-dir "${folder}"`],
+					['-c', `. "${venvActivate}" && lean-blueprint-extract-local --project-dir "${folder}"`],
 					{ cwd: folder, env: process.env }
 				);
 				let stdout = '';
@@ -231,70 +380,9 @@ export function activate(context: vscode.ExtensionContext) {
 						resolve();
 						return;
 					}
-					try {
-						const fileContent = fs.readFileSync(blueprintDataJsonl, 'utf8');
-						const data = fileContent
-							.split(/\r?\n/)
-							.filter(line => line.trim().length > 0)
-							.map(line => {
-								try {
-									return JSON.parse(line);
-								} catch (e) {
-									vscode.window.showWarningMessage('Skipping invalid JSONL line.');
-									return null;
-								}
-							})
-							.filter(obj => obj !== null);
-						function buildTree(nodes: any[]): BlueprintNode[] {
-							return nodes.map((n) => {
-								const label = n.title || n.label || n.stmt_type || n.processed_text || 'Item';
-								let children: BlueprintNode[] = [];
-								if (n.proof) {
-									children = children.concat(buildTree([n.proof]));
-								}
-								if (n.children) {
-									children = children.concat(buildTree(n.children));
-								}
-								// Add Lean declaration children
-								if (n.lean_declarations && Array.isArray(n.lean_declarations)) {
-									n.lean_declarations.forEach((decl: any) => {
-										if (decl.real_file && decl.range && decl.range.start && typeof decl.range.start.line === 'number') {
-											const leanLabel = `Lean: ${decl.full_name}`;
-											const leanNode = new BlueprintNode(leanLabel, [], vscode.TreeItemCollapsibleState.None);
-											leanNode.command = {
-												title: `Go to Lean: ${decl.full_name}`,
-												command: 'vscode.open',
-												arguments: [vscode.Uri.file(decl.real_file).with({ fragment: `L${decl.range.start.line + 1}` })]
-											};
-											leanNode.tooltip = decl.real_file + `:L${decl.range.start.line + 1}`;
-											children.push(leanNode);
-										}
-									});
-								}
-								// Set collapsibleState based on children
-								const collapsibleState = children.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None;
-								const node = new BlueprintNode(label, children, collapsibleState);
-								const info = { ...n };
-								delete info.children;
-								delete info.proof;
-								if (n.lean_names && Array.isArray(n.lean_names) && n.lean_names.length > 0) {
-									node.description = `Lean: ${n.lean_names.join(', ')}`;
-								}
-								// Blueprint declaration link as main command
-								if (n.label) {
-									node.command = {
-										title: 'Go to Blueprint Declaration',
-										command: 'workbench.action.findInFiles',
-										arguments: [{ query: n.label }]
-									};
-								}
-								node.tooltip = JSON.stringify(info, null, 2);
-								return node;
-							});
-						}
-						blueprintTreeProvider.refresh(buildTree(data));
-					} catch (e) {
-						vscode.window.showErrorMessage('Failed to parse `blueprint_extractor.py` output.');
+					const treeNodes = loadBlueprintTreeFromJsonl(blueprintDataJsonl);
+					if (treeNodes) {
+						blueprintTreeProvider.refresh(treeNodes);
 					}
 					resolve();
 				});
@@ -302,13 +390,62 @@ export function activate(context: vscode.ExtensionContext) {
 		});
 	});
 
-	function getWorkspaceFolder(): string | undefined {
-		const folders = vscode.workspace.workspaceFolders;
-		if (!folders || folders.length === 0) {
-			return undefined;
+	// Command to select a node for formalization
+	const selectNodeForFormalizationDisposable = vscode.commands.registerCommand('leanblueprintcopilot.selectNodeForFormalization', async (blueprintData: any) => {
+		if (!blueprintData) {
+			vscode.window.showErrorMessage('No blueprint data provided for formalization.');
+			return;
 		}
-		return folders[0].uri.fsPath;
-	}
+
+		// Show information about the selected node
+		const nodeInfo = `Selected node for formalization:
+Label: ${blueprintData.label || 'N/A'}
+Type: ${blueprintData.stmt_type || 'N/A'}
+Text: ${blueprintData.processed_text || 'N/A'}`;
+
+		const action = await vscode.window.showInformationMessage(
+			nodeInfo,
+			{ modal: true },
+			'Start Formalization',
+			'View Context'
+		);
+
+		if (action === 'Start Formalization') {
+			// Open chat and provide context for formalization
+			await vscode.commands.executeCommand('workbench.action.chat.open');
+
+			// Prepare context for the AI
+			const formalizationPrompt = `I need help formalizing this blueprint node in Lean:
+
+**Label**: ${blueprintData.label || 'N/A'}
+**Type**: ${blueprintData.stmt_type || 'N/A'}
+**Statement**: ${blueprintData.processed_text || 'N/A'}
+
+${blueprintData.proof ? `**Proof sketch**: ${blueprintData.proof.text || 'N/A'}` : ''}
+
+Please help me formalize this ${blueprintData.stmt_type || 'statement'} in Lean. Consider the existing project structure and dependencies.`;
+
+			// Copy the prompt to clipboard for easy pasting into chat
+			await vscode.env.clipboard.writeText(formalizationPrompt);
+			vscode.window.showInformationMessage('Formalization prompt copied to clipboard. Paste it in the chat to start!');
+		} else if (action === 'View Context') {
+			// Show detailed context in a new document
+			const contextDoc = await vscode.workspace.openTextDocument({
+				content: JSON.stringify(blueprintData, null, 2),
+				language: 'json'
+			});
+			await vscode.window.showTextDocument(contextDoc);
+		}
+	});
+
+	// Command for context menu formalization
+	const formalizeNodeDisposable = vscode.commands.registerCommand('leanblueprintcopilot.formalizeNode', async (node: BlueprintNode) => {
+		if (node && node.blueprintData) {
+			await vscode.commands.executeCommand('leanblueprintcopilot.selectNodeForFormalization', node.blueprintData);
+		} else {
+			vscode.window.showErrorMessage('No blueprint data available for this node.');
+		}
+	});
 
 	function runLeanblueprintCommandInWorkspace(command: string, terminalName: string) {
 		const folder = getWorkspaceFolder();
@@ -397,22 +534,15 @@ export function activate(context: vscode.ExtensionContext) {
 				const ok = await installLeanblueprint(folder);
 				if (!ok) {return;}
 				const pythonDir = path.join(__dirname, '..', 'python');
-				const venvDir = path.join(pythonDir, '.venv');
-				const venvActivate = path.join(venvDir, 'bin', 'activate');
-				const mcpScript = path.join(pythonDir, 'mcp_server.py');
-
-				if (!fs.existsSync(mcpScript)) {
-					vscode.window.showErrorMessage('mcp_server.py not found in the Python directory.');
-					return;
-				}
+				const venvActivate = path.join(pythonDir, '.venv', 'bin', 'activate');
 
 				const port = '5000';
 
 				let servers: vscode.McpServerDefinition[] = [];
 				servers.push(new vscode.McpStdioServerDefinition(
-					'LeanBlueprintCopilot',
+					'Lean Blueprint Copilot',
 					'bash',
-					['-c', `. "${venvActivate}" && python "${mcpScript}" --port ${port}`],
+					['-c', `. "${venvActivate}" && lean-blueprint-mcp --port ${port}`],
 					{"LEAN_BLUEPRINT_PROJECT_DIR": folder},
 				));
 				return servers;
@@ -421,8 +551,143 @@ export function activate(context: vscode.ExtensionContext) {
 		resolveMcpServerDefinition: async (server: vscode.McpServerDefinition) => {return server;},
 	});
 
-	context.subscriptions.push(createBlueprintDisposable, parseBlueprintDisposable, registerMcpServerDisposable);
+	context.subscriptions.push(createBlueprintDisposable, parseBlueprintDisposable, selectNodeForFormalizationDisposable, formalizeNodeDisposable, registerMcpServerDisposable);
+
+	// Command to show a QuickPick dropdown with checkboxes for filtering the tree by status
+	const filterBlueprintTreeDisposable = vscode.commands.registerCommand('leanblueprintcopilot.filterBlueprintTree', async () => {
+		const options = [
+			{ label: 'Formalized', picked: blueprintTreeProvider['statusFilter'].has('formalized'), status: 'formalized' as BlueprintStatus },
+			{ label: 'Non-formalized', picked: blueprintTreeProvider['statusFilter'].has('non-formalized'), status: 'non-formalized' as BlueprintStatus },
+		];
+		const selected = await vscode.window.showQuickPick(options, {
+			canPickMany: true,
+			placeHolder: 'Show nodes with status...'
+		});
+		if (selected && selected.length > 0) {
+			const statuses = selected.map(s => s.status);
+			blueprintTreeProvider.setStatusFilter(statuses);
+		}
+	});
+	context.subscriptions.push(filterBlueprintTreeDisposable);
+
+	// Command to filter the tree by search text using an input box
+	let searchText: string = '';
+
+	const searchBlueprintTreeDisposable = vscode.commands.registerCommand('leanblueprintcopilot.searchBlueprintTree', async () => {
+		const input = await vscode.window.showInputBox({
+			prompt: 'Search blueprint nodes by label or text',
+			value: searchText
+		});
+		if (input !== undefined) {
+			searchText = input;
+			blueprintTreeProvider.setSearchText(searchText);
+		}
+	});
+	context.subscriptions.push(searchBlueprintTreeDisposable);
+
+	function buildTree(nodes: any[]): BlueprintNode[] {
+		return nodes
+			.filter((n) => n.label !== null)
+			.map((n) => {
+				const label = n.title || n.label || n.stmt_type || n.processed_text || 'Item';
+				let children: BlueprintNode[] = [];
+				// Add proof as a child if present
+				if (n.proof) {
+					children.push(...buildTree([n.proof]));
+				}
+				// Add children (recursively)
+				if (n.children) {
+					children.push(...buildTree(n.children));
+				}
+				// Add Lean declaration children (as leaf nodes)
+				if (n.lean_declarations && Array.isArray(n.lean_declarations)) {
+					n.lean_declarations.forEach((decl: any) => {
+						if (decl.real_file && decl.range && decl.range.start && typeof decl.range.start.line === 'number') {
+							const leanLabel = `Lean: ${decl.full_name}`;
+							const leanNode = new BlueprintNode(leanLabel, [], vscode.TreeItemCollapsibleState.None);
+							leanNode.command = {
+								title: `Go to Lean: ${decl.full_name}`,
+								command: 'vscode.open',
+								arguments: [vscode.Uri.file(decl.real_file).with({ fragment: `L${decl.range.start.line + 1}` })]
+							};
+							leanNode.tooltip = decl.real_file + `:L${decl.range.start.line + 1}`;
+							children.push(leanNode);
+						}
+					});
+				}
+				// Set collapsibleState based on children
+				const collapsibleState = children.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None;
+				const node = new BlueprintNode(label, children, collapsibleState, n);
+				const info = { ...n };
+				delete info.children;
+				delete info.proof;
+				if (n.lean_names && Array.isArray(n.lean_names) && n.lean_names.length > 0) {
+					node.description = `Lean: ${n.lean_names.join(', ')}`;
+				}
+				if (n.label) {
+					node.command = {
+						title: 'Go to Blueprint Declaration',
+						command: 'workbench.action.findInFiles',
+						arguments: [{ query: n.label }]
+					};
+				}
+				node.tooltip = JSON.stringify(info, null, 2);
+				return node;
+			});
+	}
+
+	function loadBlueprintTreeFromJsonl(jsonlPath: string): BlueprintNode[] | undefined {
+		if (!fs.existsSync(jsonlPath)) { return undefined; }
+		try {
+			const fileContent = fs.readFileSync(jsonlPath, 'utf8');
+			const data = fileContent
+				.split(/\r?\n/)
+				.filter(line => line.trim().length > 0)
+				.map(line => {
+					try {
+						return JSON.parse(line);
+					} catch (e) {
+						return null;
+					}
+				})
+				.filter(obj => obj !== null);
+			return buildTree(data);
+		} catch (e) {
+			vscode.window.showErrorMessage('Failed to parse `blueprint_to_lean.jsonl`');
+			return undefined;
+		}
+	}
+
+	// Try to load blueprint_to_lean.jsonl at startup
+	const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+	if (workspaceFolder) {
+		const blueprintDir = require('path').join(workspaceFolder, 'blueprint');
+		const blueprintDataJsonl = require('path').join(workspaceFolder, '.trace_cache', 'blueprint_to_lean.jsonl');
+		if (fs.existsSync(blueprintDir) && !fs.existsSync(blueprintDataJsonl)) {
+			// Discrete, non-blocking info message to parse the project
+			vscode.window.showInformationMessage(
+				'Blueprint project detected. Parse the project to enable the tree view.',
+				'Parse Now'
+			).then((action) => {
+				if (action === 'Parse Now') {
+					vscode.commands.executeCommand('leanblueprintcopilot.parseBlueprintProject');
+				}
+			});
+		}
+		const treeNodes = loadBlueprintTreeFromJsonl(blueprintDataJsonl);
+		if (treeNodes) {
+			blueprintTreeProvider.refresh(treeNodes);
+		}
+	}
 }
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
+
+function getWorkspaceFolder(): string | undefined {
+		const folders = vscode.workspace.workspaceFolders;
+		if (!folders || folders.length === 0) {
+			return undefined;
+		}
+		return folders[0].uri.fsPath;
+	}
