@@ -250,7 +250,7 @@ wheels = [
 [[package]]
 name = "lean-blueprint-extractor"
 version = "0.1.0"
-source = { git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=00c1f9b77f987b1879c992de79d1e83057abc021#00c1f9b77f987b1879c992de79d1e83057abc021" }
+source = { git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=670cbf6de58fca0c0d7a3ad0aca2b79afb4024e4#670cbf6de58fca0c0d7a3ad0aca2b79afb4024e4" }
 dependencies = [
     { name = "joblib" },
     { name = "jsonlines" },
@@ -270,7 +270,7 @@ mcp = [
 [[package]]
 name = "lean-interact"
 version = "0.7.0"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/augustepoiroux/LeanInteract?tag=nightly-2025-07-09#9328d19eccb63230fe806aac7715620b8ad58f03" }
 dependencies = [
     { name = "filelock" },
     { name = "gitpython" },
@@ -279,10 +279,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "requests" },
     { name = "rich" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4a/ea/c547957ec55347c6304b980b23f9b48edd479337437f92e9a5165defa6bc/lean_interact-0.7.0.tar.gz", hash = "sha256:ec242f2b0a612488d74181a24858875eccdfa826e8fc9ff40cb35a754053ed1b", size = 138799, upload-time = "2025-07-04T13:39:44.078Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5f/43/b0b4ffde4b0cf23c1ab0c7d0446b7f66c1a148c29e899a5e320c254e2112/lean_interact-0.7.0-py3-none-any.whl", hash = "sha256:5c5cd6c454ea23c0aa00c2ff9b2077e9e62dff2de1951615bd047ecc5f11c73c", size = 34313, upload-time = "2025-07-04T13:39:42.939Z" },
 ]
 
 [[package]]
@@ -316,7 +312,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "lean-blueprint-extractor", extras = ["mcp"], git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=00c1f9b77f987b1879c992de79d1e83057abc021" },
+    { name = "lean-blueprint-extractor", extras = ["mcp"], git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=670cbf6de58fca0c0d7a3ad0aca2b79afb4024e4" },
     { name = "uv", specifier = ">=0.7.19" },
 ]
 

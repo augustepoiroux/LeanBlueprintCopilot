@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    name: Test VS Code Extension
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Python (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: sudo apt-get update && sudo apt-get install -y python3 python3-pip || true
+      - name: Install Python (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install python --version=3.11.5 -y
+
+      - name: Install VS Code Extension Test Runner
+        run: npm install -g @vscode/test-electron
+      - name: Run Extension Tests
+        run: npm test
+      - name: Check Python setup
+        run: |
+          cd src
+          node -e "require('./extension').activate({ subscriptions: [] })"
+        env:
+          CI: true

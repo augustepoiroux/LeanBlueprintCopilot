@@ -201,20 +201,31 @@ class BlueprintTreeDataProvider implements vscode.TreeDataProvider<BlueprintNode
 
 export function activate(context: vscode.ExtensionContext) {
 	async function installLeanblueprint(contextFolder: string): Promise<boolean> {
+		// Detect platform
+		const isWindows = process.platform === 'win32';
 		function execPromise(cmd: string, options = {}): Promise<{ stdout: string, stderr: string }> {
 			return new Promise((resolve, reject) => {
-				exec(cmd, options, (error, stdout, stderr) => {
+				exec(cmd, { ...options, shell: isWindows ? 'cmd.exe' : '/bin/bash' }, (error, stdout, stderr) => {
 					if (error) {reject({ stdout, stderr });}
 					else {resolve({ stdout, stderr });}
 				});
 			});
 		}
 		function isPackageInstalled(pkg: string): Promise<boolean> {
-			return new Promise((resolve) => {
-				exec(`dpkg -s ${pkg}`, (error) => {
-					resolve(!error);
+			if (isWindows) {
+				// On Windows, check if executable is in PATH
+				return new Promise((resolve) => {
+					exec(`where ${pkg}`, (error) => {
+						resolve(!error);
+					});
 				});
-			});
+			} else {
+				return new Promise((resolve) => {
+					exec(`dpkg -s ${pkg}`, (error) => {
+						resolve(!error);
+					});
+				});
+			}
 		}
 
 		// Show progress bar for the whole installation process
@@ -225,32 +236,38 @@ export function activate(context: vscode.ExtensionContext) {
 		}, async (progress) => {
 			progress.report({ message: 'Checking system dependencies...' });
 			try {
-				// Check and install system dependencies: graphviz, python3, ...
 				const pkgs = [];
 				if (!await isPackageInstalled('graphviz')) { pkgs.push('graphviz'); }
-				if (!await isPackageInstalled('libgraphviz-dev')) { pkgs.push('libgraphviz-dev'); }
-				if (!await isPackageInstalled('python3')) { pkgs.push('python3'); }
-				if (!await isPackageInstalled('python3-venv')) { pkgs.push('python3-venv'); }
-				if (!await isPackageInstalled('python3-pip')) { pkgs.push('python3-pip'); }
+				if (!isWindows && !await isPackageInstalled('libgraphviz-dev')) { pkgs.push('libgraphviz-dev'); }
+				if (!await isPackageInstalled(isWindows ? 'python' : 'python3')) { pkgs.push(isWindows ? 'python' : 'python3'); }
+				if (!isWindows && !await isPackageInstalled('python3-venv')) { pkgs.push('python3-venv'); }
+				if (!await isPackageInstalled(isWindows ? 'pip' : 'python3-pip')) { pkgs.push(isWindows ? 'pip' : 'python3-pip'); }
 				if (pkgs.length > 0) {
 					const terminal = vscode.window.createTerminal({ name: 'Install System Dependencies' });
 					terminal.show();
-					terminal.sendText(`sudo apt update && sudo apt install -y ${pkgs.join(' ')}`);
-					vscode.window.showWarningMessage(
-						`Please complete the installation of system dependencies in the opened terminal, then retry.`
-					);
+					if (isWindows) {
+						vscode.window.showWarningMessage(
+							`Please install the following dependencies manually: ${pkgs.join(', ')}.\nVisit https://pygraphviz.github.io/documentation/stable/install.html#windows for Graphviz instructions.`
+						);
+					} else {
+						terminal.sendText(`sudo apt update && sudo apt install -y ${pkgs.join(' ')}`);
+						vscode.window.showWarningMessage(
+							`Please complete the installation of system dependencies in the opened terminal, then retry.`
+						);
+					}
 					return false;
 				}
 			} catch (e: any) {
 				vscode.window.showWarningMessage(
-					"Failed to check/install system dependencies. If you are using a debian-based environment, please run the following command in your terminal, then retry:\n" +
-					"sudo apt update && sudo apt install -y graphviz libgraphviz-dev python3-pip. Otherwise, please check https://pygraphviz.github.io/documentation/stable/install.html"
+					isWindows
+						? "Failed to check/install system dependencies. Please install Python, pip, and Graphviz manually. See https://pygraphviz.github.io/documentation/stable/install.html#windows"
+						: "Failed to check/install system dependencies. If you are using a debian-based environment, please run the following command in your terminal, then retry:\n" +
+						  "sudo apt update && sudo apt install -y graphviz libgraphviz-dev python3-pip. Otherwise, please check https://pygraphviz.github.io/documentation/stable/install.html"
 				);
 				return false;
 			}
 
 			progress.report({ message: 'Creating Python virtual environment...' });
-			// Use extension directory for pythonDir
 			const pythonDir = path.join(__dirname, '..', 'python');
 			const venvDir = path.join(pythonDir, '.venv');
 			const pyprojectPath = path.join(pythonDir, 'pyproject.toml');
@@ -262,21 +279,29 @@ export function activate(context: vscode.ExtensionContext) {
 			// Create venv if it doesn't exist
 			if (!fs.existsSync(venvDir)) {
 				try {
-					await execPromise('python3 -m venv .venv', { cwd: pythonDir });
+					await execPromise(`${isWindows ? 'python' : 'python3'} -m venv .venv`, { cwd: pythonDir });
 				} catch (e: any) {
 					vscode.window.showErrorMessage('Failed to create Python virtual environment: ' + (e.stderr || e.stdout || e.message || JSON.stringify(e)));
 					return false;
 				}
 			}
-			const venvActivate = path.join(venvDir, 'bin', 'activate');
+			const venvActivate = isWindows
+				? path.join(venvDir, 'Scripts', 'activate.bat')
+				: path.join(venvDir, 'bin', 'activate');
 
 			// Check if uv is installed
-			const uvInstalled = fs.existsSync(path.join(venvDir, 'bin', 'uv'));
+			const uvPath = isWindows
+				? path.join(venvDir, 'Scripts', 'uv.exe')
+				: path.join(venvDir, 'bin', 'uv');
+			const uvInstalled = fs.existsSync(uvPath);
 			if (!uvInstalled) {
 				progress.report({ message: 'Installing uv in the virtual environment...' });
-				// Install uv in the venv
 				try {
-					await execPromise(`. ${venvActivate} && pip install uv`);
+					if (isWindows) {
+						await execPromise(`call "${venvActivate}" && pip install uv`, { cwd: pythonDir });
+					} else {
+						await execPromise(`. "${venvActivate}" && pip install uv`, { cwd: pythonDir });
+					}
 				} catch (e: any) {
 					vscode.window.showErrorMessage('Failed to install uv in venv: ' + (e.stderr || e.stdout || e.message || JSON.stringify(e)));
 					return false;
@@ -284,9 +309,12 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			progress.report({ message: 'Installing Python dependencies with uv sync...' });
-			// Use uv sync in the venv
 			try {
-				await execPromise(`. ${venvActivate} && uv sync`, { cwd: pythonDir, shell: '/bin/bash' });
+				if (isWindows) {
+					await execPromise(`call "${venvActivate}" && uv sync`, { cwd: pythonDir });
+				} else {
+					await execPromise(`. "${venvActivate}" && uv sync`, { cwd: pythonDir, shell: '/bin/bash' });
+				}
 			} catch (e: any) {
 				vscode.window.showErrorMessage('Failed to install Python dependencies with uv sync: ' + (e.stderr || e.stdout || e.message || JSON.stringify(e)));
 				return false;
@@ -346,11 +374,11 @@ export function activate(context: vscode.ExtensionContext) {
 		const pythonDir = path.join(__dirname, '..', 'python');
 		const venvActivate = path.join(pythonDir, '.venv', 'bin', 'activate');
 
-		const hiddenDir = path.join(folder, '.trace_cache');
-		if (!fs.existsSync(hiddenDir)) {
-			fs.mkdirSync(hiddenDir);
+		const blueprintTraceDir = path.join(folder, '.cache', 'blueprint_trace');
+		if (!fs.existsSync(blueprintTraceDir)) {
+			fs.mkdirSync(blueprintTraceDir);
 		}
-		const blueprintDataJsonl = path.join(hiddenDir, 'blueprint_to_lean.jsonl');
+		const blueprintDataJsonl = path.join(blueprintTraceDir, 'blueprint_to_lean.jsonl');
 
 		const outputChannel = vscode.window.createOutputChannel('Lean Blueprint Extraction');
 		await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Parsing Blueprint project...' }, async () => {
@@ -662,7 +690,7 @@ Please help me formalize this ${blueprintData.stmt_type || 'statement'} in Lean.
 	const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 	if (workspaceFolder) {
 		const blueprintDir = require('path').join(workspaceFolder, 'blueprint');
-		const blueprintDataJsonl = require('path').join(workspaceFolder, '.trace_cache', 'blueprint_to_lean.jsonl');
+		const blueprintDataJsonl = require('path').join(workspaceFolder, '.cache', 'blueprint_trace', 'blueprint_to_lean.jsonl');
 		if (fs.existsSync(blueprintDir) && !fs.existsSync(blueprintDataJsonl)) {
 			// Discrete, non-blocking info message to parse the project
 			vscode.window.showInformationMessage(

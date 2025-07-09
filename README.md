@@ -15,6 +15,8 @@ This VS Code extension integrates Lean Blueprint with the Copilot agent mode, al
 This package is still experimental and under development.
 Please report any problems you encounter. Contributions are welcome too!
 
+Compatible with all Lean versions between v4.8.0-rc1 and v4.22.0-rc3.
+
 ## Features
 
 ### Copilot Agent Mode
@@ -37,7 +39,7 @@ Feel free to open an issue or a pull request if you want to add support for othe
 - **Parse Project**: Parses the Lean Blueprint project in the current workspace and extracts information about the project. Necessary for the Copilot agent mode to work properly. Should be run again whenever the project is updated.
 - **Build PDF**: Builds the PDF document from the Lean Blueprint project.
 - **Build Web**: Builds the web documentation from the Lean Blueprint project.
-- **Check Declarations**: Run the "checkdecls" command from the Lean Blueprint package. Official description: "check that every Lean declaration name that appear in the blueprint exist in the project (or in a dependency of the project such as Mathlib). This requires a compiled Lean project, so make sure to run lake build beforehand."
+- **Check Declarations**: Run the `checkdecls` command from the Lean Blueprint package. Official description: "check that every Lean declaration name that appear in the blueprint exist in the project (or in a dependency of the project such as Mathlib). This requires a compiled Lean project, so make sure to run lake build beforehand."
 - **Build All**: Run "Build PDF", "Build Web", and "Check Declarations" commands in sequence.
 - **Serve Web Blueprint**: Serve the web documentation from the Lean Blueprint project. This will start a local server that serves the web documentation, allowing you to view it inside VS Code.
 
@@ -53,7 +55,6 @@ Requirements are the same as for [Lean Blueprint](https://github.com/PatrickMass
 
 ## Known Issues
 
-- Currently limited to Lean v4.22.0-rc3
 - Extraction is still very experimental and may face issues.
 - When a few files are updated, the extracted data may be incorrect. We recommend removing the `.trace_cache` directory in your project folder to force a full extraction in this case.
 - Web view in VS Code is sometimes buggy.
