@@ -7,16 +7,9 @@ authors = [
 ]
 requires-python = "==3.10.0"
 dependencies = [
-    "jsonlines>=4.0.0",
-    "leanblueprint>=0.0.15",
     "uv>=0.7.19",
-    "mcp[cli]>=1.6.0",
-    "lean-interact==0.7.0",
-    "lean-blueprint-extractor"
+    "lean-blueprint-extractor[mcp]"
 ]
 
-[tool.hatch.metadata]
-allow-direct-references = true
-
 [tool.uv.sources]
-lean-blueprint-extractor = { path = "../../../Lean/LeanBlueprintExtractor" }
+lean-blueprint-extractor = { git = "https://github.com/augustepoiroux/LeanBlueprintExtractor" }

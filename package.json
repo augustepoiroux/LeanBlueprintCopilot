@@ -1,8 +1,8 @@
 {
   "name": "leanblueprintcopilot",
-  "displayName": "LeanBlueprintCopilot",
+  "displayName": "Lean Blueprint Copilot",
   "description": "",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.101.0"
   },
@@ -42,6 +42,22 @@
       {
         "command": "leanblueprintcopilot.serve",
         "title": "Lean Blueprint: Serve Web Blueprint"
+      },
+      {
+        "command": "leanblueprintcopilot.selectNodeForFormalization",
+        "title": "Select for Formalization"
+      },
+      {
+        "command": "leanblueprintcopilot.formalizeNode",
+        "title": "Formalize"
+      },
+      {
+        "command": "leanblueprintcopilot.filterBlueprintTree",
+        "title": "Filter Blueprint Tree"
+      },
+      {
+        "command": "leanblueprintcopilot.searchBlueprintTree",
+        "title": "Search Blueprint Tree"
       }
     ],
     "mcpServerDefinitionProviders": [
@@ -57,6 +73,35 @@
           "name": "Lean Blueprint Structure"
         }
       ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "leanblueprintcopilot.filterBlueprintTree",
+          "when": "view == leanblueprintcopilot.blueprintTree",
+          "group": "navigation@1",
+          "icon": "$(filter)"
+        },
+        {
+          "command": "leanblueprintcopilot.searchBlueprintTree",
+          "when": "view == leanblueprintcopilot.blueprintTree",
+          "group": "navigation@2",
+          "icon": "$(search)"
+        },
+        {
+          "command": "leanblueprintcopilot.parseBlueprintProject",
+          "when": "view == leanblueprintcopilot.blueprintTree",
+          "group": "navigation@0",
+          "icon": "$(refresh)"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "leanblueprintcopilot.formalizeNode",
+          "when": "view == leanblueprintcopilot.blueprintTree && viewItem == unformalizedNode",
+          "group": "formalization"
+        }
+      ]
     }
   },
   "scripts": {
@@ -68,14 +113,14 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.101.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
+    "@types/vscode": "^1.101.0",
     "@typescript-eslint/eslint-plugin": "^8.28.0",
     "@typescript-eslint/parser": "^8.28.0",
-    "eslint": "^9.23.0",
-    "typescript": "^5.8.2",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1"
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.23.0",
+    "typescript": "^5.8.3"
   }
 }
