@@ -1,4 +1,14 @@
-# (Experimental) Lean Blueprint Copilot - VSCode extension
+# Lean Blueprint Copilot
+
+<div align="center">
+  <img src="images/icon.png" alt="Lean Blueprint Copilot Icon" width="96"/>
+</div>
+
+![Experimental](https://img.shields.io/badge/status-experimental-orange)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/augustepoiroux.leanblueprintcopilot?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=augustepoiroux.leanblueprintcopilot)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/augustepoiroux.leanblueprintcopilot?label=Installs)](https://marketplace.visualstudio.com/items?itemName=augustepoiroux.leanblueprintcopilot)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/augustepoiroux.leanblueprintcopilot?label=Rating)](https://marketplace.visualstudio.com/items?itemName=augustepoiroux.leanblueprintcopilot)
+[![License](https://img.shields.io/github/license/augustepoiroux/LeanBlueprintCopilot)](https://github.com/augustepoiroux/LeanBlueprintCopilot/blob/main/LICENSE)
 
 This VS Code extension integrates Lean Blueprint with the Copilot agent mode, allowing LLMs to extract and utilize information from your Lean Blueprint projects and help you with Lean Blueprint development and formalization.
 
@@ -47,9 +57,3 @@ Requirements are the same as for [Lean Blueprint](https://github.com/PatrickMass
 - Extraction is still very experimental and may face issues.
 - When a few files are updated, the extracted data may be incorrect. We recommend removing the `.trace_cache` directory in your project folder to force a full extraction in this case.
 - Web view in VS Code is sometimes buggy.
-
-## Release Notes
-
-### 0.1.0
-
-Initial release
