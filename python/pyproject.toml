@@ -12,4 +12,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-lean-blueprint-extractor = { git = "https://github.com/augustepoiroux/LeanBlueprintExtractor", rev = "670cbf6de58fca0c0d7a3ad0aca2b79afb4024e4" }
+lean-blueprint-extractor = { git = "https://github.com/augustepoiroux/LeanBlueprintExtractor", rev = "683d854e0b579f74f301f7e8875391b8f68a869d" }
