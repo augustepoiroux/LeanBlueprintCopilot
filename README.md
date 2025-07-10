@@ -56,5 +56,5 @@ Requirements are the same as for [Lean Blueprint](https://github.com/PatrickMass
 ## Known Issues
 
 - Extraction is still very experimental and may face issues.
-- When a few files are updated, the extracted data may be incorrect. We recommend removing the `.trace_cache` directory in your project folder to force a full extraction in this case.
+- When a few files are updated, the extracted data may be incorrect. We recommend removing the `.cache` directory in your project folder to force a full extraction in this case.
 - Web view in VS Code is sometimes buggy.
