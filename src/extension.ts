@@ -376,7 +376,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		const blueprintTraceDir = path.join(folder, '.cache', 'blueprint_trace');
 		if (!fs.existsSync(blueprintTraceDir)) {
-			fs.mkdirSync(blueprintTraceDir);
+			fs.mkdirSync(blueprintTraceDir, { recursive: true });
 		}
 		const blueprintDataJsonl = path.join(blueprintTraceDir, 'blueprint_to_lean.jsonl');
 

@@ -250,7 +250,7 @@ wheels = [
 [[package]]
 name = "lean-blueprint-extractor"
 version = "0.1.0"
-source = { git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=683d854e0b579f74f301f7e8875391b8f68a869d#683d854e0b579f74f301f7e8875391b8f68a869d" }
+source = { git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=96e9a027bdb7e201aec97781e738becf9fb5939f#96e9a027bdb7e201aec97781e738becf9fb5939f" }
 dependencies = [
     { name = "joblib" },
     { name = "jsonlines" },
@@ -270,7 +270,7 @@ mcp = [
 [[package]]
 name = "lean-interact"
 version = "0.7.0"
-source = { git = "https://github.com/augustepoiroux/LeanInteract?tag=nightly-2025-07-09#9328d19eccb63230fe806aac7715620b8ad58f03" }
+source = { git = "https://github.com/augustepoiroux/LeanInteract?tag=nightly-2025-07-10#2face6f58ed6dd504e944e8038eec2dab58abe7f" }
 dependencies = [
     { name = "filelock" },
     { name = "gitpython" },
@@ -312,7 +312,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "lean-blueprint-extractor", extras = ["mcp"], git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=683d854e0b579f74f301f7e8875391b8f68a869d" },
+    { name = "lean-blueprint-extractor", extras = ["mcp"], git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=96e9a027bdb7e201aec97781e738becf9fb5939f" },
     { name = "uv", specifier = ">=0.7.19" },
 ]
 
