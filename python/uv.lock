@@ -250,7 +250,7 @@ wheels = [
 [[package]]
 name = "lean-blueprint-extractor"
 version = "0.1.0"
-source = { git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=96e9a027bdb7e201aec97781e738becf9fb5939f#96e9a027bdb7e201aec97781e738becf9fb5939f" }
+source = { git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=ab9626742267f4319c3ab58a18d8b5cdcdeb2b3c#ab9626742267f4319c3ab58a18d8b5cdcdeb2b3c" }
 dependencies = [
     { name = "joblib" },
     { name = "jsonlines" },
@@ -312,7 +312,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "lean-blueprint-extractor", extras = ["mcp"], git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=96e9a027bdb7e201aec97781e738becf9fb5939f" },
+    { name = "lean-blueprint-extractor", extras = ["mcp"], git = "https://github.com/augustepoiroux/LeanBlueprintExtractor?rev=ab9626742267f4319c3ab58a18d8b5cdcdeb2b3c" },
     { name = "uv", specifier = ">=0.7.19" },
 ]
 
